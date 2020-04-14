@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+   <style>
+      #map {
+         height: 500px;
+         width: auto;
+      }
+   </style>
+   <script src="https://code.jquery.com/jquery-3.4.1.min.js"
+      integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
+   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css"
+      integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+   <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.20/css/jquery.dataTables.css">
+   <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.20/js/jquery.dataTables.js">
+   </script>
+   <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
+      integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous">
+   </script>
+   <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"
+      integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous">
+   </script>
+   <script src="assets/employers.js"></script>
+   <script>
+      var markers = null;
+      var circle = null;
+      var map = null;
+      var employersMarkers = [];
+      var myLocation = null;
+      var clustering = null;
+
+      var themes = ["Technologie", "Construction", "Food", "Restaurant", "Mnistere", "All"];
+      var employers = Load().data;
+
+      function getDistance(origin, destination) {
+         var lon1 = toRadian(origin[1]),
+            lat1 = toRadian(origin[0]),
+            lon2 = toRadian(destination[1]),
+            lat2 = toRadian(destination[0]);
+
+         var deltaLat = lat2 - lat1;
+         var deltaLon = lon2 - lon1;
+
+         var a = Math.pow(Math.sin(deltaLat / 2), 2) + Math.cos(lat1) * Math.cos(lat2) * Math.pow(Math
+            .sin(deltaLon / 2), 2);
+         var c = 2 * Math.asin(Math.sqrt(a));
+         var EARTH_RADIUS = 6371;
+         return c * EARTH_RADIUS;
+      }
+
+      function toRadian(degree) {
+         return degree * Math.PI / 180;
+      }
+
+      function showPosition(position) {
+         var pos = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+         };
+         setMyLocation(pos);
+      }
+
+      function CreateTable() {
+         $('#employers').DataTable().clear().draw();
+         employers.forEach(employe => {
+            var employerDistance = getDistance([
+               employe.cords.lat, employe.cords.long
+            ], [myLocation
+               .position.lat(), myLocation.position.lng()
+            ]);
+            if ((employe.theme == $('#selectedTheme').val() && employerDistance <= $(
+                  '#rangeSelected').val()) ||
+               ($('#selectedTheme').val() == "All" && employerDistance <= $('#rangeSelected')
+                  .val())) {
+               $('#employers').DataTable().row.add([
+                  employe.name, employerDistance
+               ]);
+               var job = new google.maps.Marker({
+                  position: {
+                     lat: employe.cords.lat,
+                     lng: employe.cords.long
+                  },
+               });
+               var infowindow = new google.maps.InfoWindow({
+                  content: "Nom: " + "<b>" + employe.name + "</b>" + "<br>" + "Distance: " +
+                     "<b>" + Math.round(employerDistance) + " km </b>" + "<br>" + "Url: " +
+                     "<a href=" + employe.long + ">" +
+                     employe.long +
+                     "</a>" + "<br>" +
+                     "<a target='_blank' href=https://www.google.com/maps/dir/?api=1&origin=" +
+                     myLocation
+                     .position.lat() + "," + myLocation.position.lng() + "&destination=" + employe
+                     .cords
+                     .lat +
+                     "," + employe.cords.long + "&travelmode=" + $("#mode")
+                     .val() + ">" + "Ouvrir dans Google Maps" +
+                     "</a>"
+               });
+               job.addListener('click', function () {
+                  infowindow.open(map, job);
+               });
+               employersMarkers.push(job);
+            }
+         });
+         map.fitBounds(circle.getBounds());
+         clustering = new MarkerClusterer(map, employersMarkers, {
+            imagePath: "https://laitauchocolat.duckdns.org/MTESS/assets/v3-utility-library/markerclusterer/images/m"
+         });
+         $('#employers').DataTable().draw();
+         $("#employersCount").text(employersMarkers.length + " trouves sur " + employers.length);
+      }
+
+      function setMyLocation(pos) {
+         clearMyLocation();
+         clearAllMarker();
+         var infowindow = new google.maps.InfoWindow({
+            content: "Votre position GPS"
+         });
+         myLocation = new google.maps.Marker({
+            position: pos,
+            map: map,
+            icon: {
+               url: "https://image.flaticon.com/icons/svg/1916/1916670.svg",
+               scaledSize: new google.maps.Size(30, 30)
+            }
+         });
+         myLocation.addListener('click', function () {
+            infowindow.open(map, myLocation);
+         });
+         circle = new google.maps.Circle({
+            strokeColor: '#187196',
+            fillColor: '#187196',
+            fillOpacity: 0.1,
+            map: map,
+            center: pos,
+            radius: $("#rangeSelected").val() * 1000
+         });
+         CreateTable();
+      }
+
+      function clearMyLocation() {
+         if (myLocation != null) {
+            myLocation.setMap(null);
+         }
+         if (circle != null) {
+            circle.setMap(null);
+         }
+      }
+
+      function clearAllMarker() {
+         employersMarkers.forEach(marker => {
+            marker.setMap(null);
+         });
+         if (clustering != null) {
+            clustering.clearMarkers();
+         }
+         employersMarkers = [];
+         clustering = null;
+      }
+
+      $(document).ready(function () {
+         var table = $('#employers').DataTable();
+         $("#locationButton").click(function () {
+            if (navigator.geolocation) {
+               navigator.geolocation.getCurrentPosition(showPosition);
+            }
+         });
+
+         $("#geoButton").click(function () {
+            var inputAdr = $('#inputAdr').val();
+            $.ajax({
+               url: 'https://maps.googleapis.com/maps/api/geocode/json?address=' + inputAdr +
+                  '&key=AIzaSyCH8do72tSP0bV1k-9fezA-fOCUw4CzpdU',
+               type: 'GET',
+               crossDomain: true,
+               success: function (data) {
+                  try {
+                     setMyLocation({
+                        lat: data.results[0].geometry.location.lat,
+                        lng: data.results[0].geometry.location.lng
+                     });
+                  } catch (err) {
+                     clearMyLocation();
+                     clearAllMarker();
+                  }
+               }
+            });
+         });
+      });
+
+
+      function initMap() {
+         myLocation = new google.maps.Marker({
+            position: {
+               lat: 46.829853,
+               lng: -71.254028
+            },
+            map: map,
+         });
+         var initialLocation = myLocation;
+         map = new google.maps.Map(
+            document.getElementById('map'), {
+               zoom: 14,
+               center: myLocation.position
+            });
+      }
+   </script>
+</head>
+
+<body>
+   <nav class="navbar navbar-light bg-light" style="margin-bottom: 20px;">
+      <a class="navbar-brand">
+         <img src="https://www.pinpng.com/pngs/m/10-105489_dick-butt-png-download-dick-butt-meme-transparent.png"
+            width="30" height="30" class="d-inline-block align-top" alt="">
+         Geocoding
+      </a>
+   </nav>
+   <div class="container">
+      <h3>Chercher des employeurs</h3>
+      <div class="row">
+         <div class="col border" style="background-color: rgb(245, 245, 245);padding: 20px;">
+            <div class="row ">
+               <div class="col-4">
+                  <label>Rechercher une emploie selon une adresse</label>
+                  <input class="form-control" id="inputAdr">
+                  <small class="form-text text-muted">Ex: 12745 Boulevard Saint-Claude ou 12745, Boulevard
+                     Saint-Claude,
+                     Saint-Claude, Des Châtels, La Haute-Saint-Charles, Québec, Capitale-Nationale, G2B 1H4,
+                     Canada</small>
+                  <button id="geoButton" class="btn btn-primary"
+                     style="margin-top: 5px; margin-bottom: 20px;">Recherche</button>
+               </div>
+               <div class="col-4">
+                  <label>Rechercher une emploie selon votre position actuelle</label>
+                  <button id="locationButton" class="add btn btn-primary">Recherche</button>
+               </div>
+               <div class="col-4">
+                  <label class="col-4">Type :</label>
+                  <select id="selectedTheme" class="browser-default custom-select col-7">
+                     <option selected>All</option>
+                     <option value="All">Technologie</option>
+                     <option value="All">Construction</option>
+                     <option value="All">Food</option>
+                     <option value="All">Restaurant</option>
+                     <option value="All">Mnistere</option>
+                  </select>
+                  <label class="col-4" style="margin-top: 15px;">Rayon :</label>
+                  <select id="rangeSelected" class="browser-default custom-select col-7">
+                     <option value="10" selected>10 KM</option>
+                     <option value="20">20 KM</option>
+                     <option value="40">40 KM</option>
+                     <option value="50">50 KM</option>
+                     <option value="100">100 KM</option>
+                     <option value="200">200 KM</option>
+                     <option value="400">400 KM</option>
+                     <option value="800">800 KM</option>
+                  </select>
+                  <label class="col-4" style="margin-top: 15px;">Deplacement:</label>
+                  <select id="mode" class="browser-default custom-select col-7">
+                     <option value="driving" selected>Driving</option>
+                     <option value="walking">Walking</option>
+                     <option value="bicycling">Bicycling</option>
+                     <option value="transit">Transit</option>
+                  </select>
+                  <label class="col-4" style="margin-top: 15px;">Total employeurs: </label>
+                  <label id="employersCount" class="col-4" style="margin-top: 15px;">0</label>
+               </div>
+            </div>
+         </div>
+      </div>
+      <div class="row" style="margin-top: 20px;">
+         <div class="col">
+            <div id="map"></div>
+         </div>
+      </div>
+      <div class="row" style="margin-top: 20px;margin-bottom: 20px;">
+         <div class="col border" style="background-color: rgb(245, 245, 245);">
+            <h3 style="margin-top:20px;">Resultats</h3>
+            <table id="employers" class="display" style="margin-top:20px; margin-bottom: 70px;">
+               <thead>
+                  <tr>
+                     <th id="employer">Employers</th>
+                     <th id="distance">Distance in KM</th>
+                  </tr>
+               </thead>
+               <tbody>
+               </tbody>
+            </table>
+         </div>
+      </div>
+   </div>
+   <script
+      src="assets/markerclusterer.js">
+   </script>
+   <script async defer
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCH8do72tSP0bV1k-9fezA-fOCUw4CzpdU&callback=initMap">
+   </script>
+</body>
+
+</html>
